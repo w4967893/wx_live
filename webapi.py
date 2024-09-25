@@ -8,6 +8,7 @@ import queue
 import os
 import uvicorn
 import base64
+import pymysql.cursors
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -255,7 +256,7 @@ def request_qrcode(retoken):
             status=rejson['data']['status']
             acctStatus=rejson['data']['acctStatus']
             if status==0 and acctStatus==0:
-                print('请使用微信扫码登录！')
+                print('请使用<微信>扫码登录！')
             elif status==5 and acctStatus==1:
                 print('已扫码请在手机上点击确认登录！')
             elif status==1 and acctStatus==1:
@@ -618,7 +619,7 @@ def a_online_member():
 
 
 
-def msg():
+def msg(live_id):
     global liveCookies
     url = "https://channels.weixin.qq.com/cgi-bin/mmfinderassistant-bin/live/msg"
 
@@ -665,7 +666,7 @@ def msg():
 
             liveCookies=rejson['data']['liveCookies']
             #print("liveCookies",liveCookies)
-            downmsg(rejson['data'])
+            downmsg(rejson['data'], live_id)
             return True
         else:
             return False
@@ -763,76 +764,81 @@ def gift_enum_list():
         return False
 
 
-def downmsg(rejson):
+def downmsg(rejson, live_id):
     #######解析数据########
     newmsg=[]
+    insert_data = []
     for member in rejson['msgList']:
         type = member['type']
-        if type==10005 :
-            #print(member)
-            nickname = member['nickname']
-            username = member['username']
-            content = member['content']
-            signature=member['finderLiveContact']['contact']['signature']
-            ext_info=member['finderLiveContact']['contact']['extInfo']
-            badge_infos=member['finderLiveContact']['badgeInfos']
-            newmsg.append({'nickname': nickname, 'msgType': type, 'username': username, 'content': content,'signature':signature,'ext_info':ext_info,'badge_infos':badge_infos})      
+        # if type==10005 :
+        #     #print(member)
+        #     nickname = member['nickname']
+        #     username = member['username']
+        #     content = member['content']
+        #     signature=member['finderLiveContact']['contact']['signature']
+        #     ext_info=member['finderLiveContact']['contact']['extInfo']
+        #     badge_infos=member['finderLiveContact']['badgeInfos']
+        #     newmsg.append({'nickname': nickname, 'msgType': type, 'username': username, 'content': content,'signature':signature,'ext_info':ext_info,'badge_infos':badge_infos})
         if type==1 :
-            #print(member)
             nickname = member['nickname']
-            username = member['username']
+            # username = member['username']
             content = member['content']
-            signature=member['finderLiveContact']['contact']['signature']
-            ext_info=member['finderLiveContact']['contact']['extInfo']
-            badge_infos=member['finderLiveContact']['badgeInfos']
-            newmsg.append({'nickname': nickname, 'msgType': type, 'username': username, 'content': content,'signature':signature,'ext_info':ext_info,'badge_infos':badge_infos})   
+            # signature=member['finderLiveContact']['contact']['signature']
+            # ext_info=member['finderLiveContact']['contact']['extInfo']
+            # badge_infos=member['finderLiveContact']['badgeInfos']
+            # newmsg.append({'nickname': nickname, 'msgType': type, 'username': username, 'content': content,'signature':signature,'ext_info':ext_info,'badge_infos':badge_infos})
+            print("昵称："+nickname+"  弹幕信息："+content)
+            insert_data.append((live_id, content, "", "[]"))
 
-    for member in rejson['appMsgList']:
-        type=member['msgType']
-        if type==20009:
-            badge_infos=member['fromUserContact']['badgeInfos']
-            nickname=member['fromUserContact']['contact']['nickname']
-            username=member['fromUserContact']['contact']['username']
-            signature=""
-            ext_info=None
-            base64_string = member['payload']
-            decoded_string = base64.b64decode(base64_string).decode('utf-8')
-            #print(decoded_string)
-            gift_info=json.loads(decoded_string)
-            newmsg.append({'nickname': nickname, 'msgType': type, 'username': username, 'gift_info': gift_info,'signature':signature,'ext_info':ext_info,'badge_infos':badge_infos})      
-
+    # for member in rejson['appMsgList']:
+    #     type=member['msgType']
+    #     if type==20009:
+    #         badge_infos=member['fromUserContact']['badgeInfos']
+    #         nickname=member['fromUserContact']['contact']['nickname']
+    #         username=member['fromUserContact']['contact']['username']
+    #         signature=""
+    #         ext_info=None
+    #         base64_string = member['payload']
+    #         decoded_string = base64.b64decode(base64_string).decode('utf-8')
+    #         #print(decoded_string)
+    #         gift_info=json.loads(decoded_string)
+    #         newmsg.append({'nickname': nickname, 'msgType': type, 'username': username, 'gift_info': gift_info,'signature':signature,'ext_info':ext_info,'badge_infos':badge_infos})
 
 
 
 
     ######################
+    # 入库
+    insert(insert_data)
+
+    ######################
     # 将数据写入文件
     # 检测当前目录下是否存在msglist目录，如果不存在则创建
-    if not os.path.exists("msglist"):
-        os.makedirs("msglist")
+    # if not os.path.exists("msglist"):
+    #     os.makedirs("msglist")
 
     # 生成文件路径
-    file_path = os.path.join("msglist", f"{generate_timestamp(13)}.json")
+    # file_path = os.path.join("msglist", f"{generate_timestamp(13)}.json")
 
 
   
-    if len(newmsg)>0:
-        # 将数据保存到文件中
-        with open(file_path, "w") as file:
-            json.dump(newmsg, file)
+    # if len(newmsg)>0:
+    #     # 将数据保存到文件中
+    #     with open(file_path, "w") as file:
+    #         json.dump(newmsg, file)
 
 
 
 
 
-def getmsg():
+def getmsg(live_id):
     count = 0
     global terminate_flag
     while not terminate_flag:
         count += 1
         #print("当前时间：", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
-        if get_live_info() and msg():
-                time.sleep(0.1)
+        if get_live_info() and msg(live_id):
+                time.sleep(0.2)
         else:
             break
 
@@ -894,12 +900,39 @@ def clear_messages():
 
     return {"code":1,"message": "所有文件已删除"}
 
+@staticmethod
+def create_connection():
+    return pymysql.connect(
+        host='127.0.0.1',
+        user='admin',
+        password='123456',
+        database='omnibot',
+        charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=True  # 设置自动提交模式
+    )
+
 @app.get("/get_online_member")
 async def get_online_members():
     return FileResponse("online_member.json")
 
+def insert(data):
+    db = create_connection()
+    sql_insert = "INSERT INTO comments (live_id, content, answer, citations) VALUES (%s, %s, %s, %s)"
+    try:
+        with db.cursor() as cursor:
+            try:
+                cursor.executemany(sql_insert, data)
+            except Exception as e:
+                # 捕获异常
+                print(f"插入时发生错误：{e}")
+    finally:
+        db.close()
+
 if __name__ == '__main__':
-    t1 = Thread(target=getmsg)
+    # breakpoint()
+    live_id = 9527
+    t1 = Thread(target=getmsg(live_id))
 
     # 调用函数获取数据
     #data = hepler_merlin_mmdata()
@@ -918,7 +951,7 @@ if __name__ == '__main__':
     qr.make()
     qr.print_ascii(out=None, tty=False, invert=False)
 
-    print('请使用微信扫码登录！')
+    print('请使用<微信>扫码登录！')
 
     time.sleep(1)
 
@@ -928,17 +961,17 @@ if __name__ == '__main__':
         t1.start()
 
 
-    
+
     #启动本地api服务
     print("如需关闭服务，请输入ctrl+C来终止api服务进程，再输入exit退出监听。")
     uvicorn.run("webapi:app", host="0.0.0.0", port=8000, reload=True)
-    
+
 
 
     while True:
         user_input = input("等待输入指令：")
         print("用户输入的指令是：" + user_input)
-        
+
         if user_input == "exit":
             terminate_flag=True
             t1.join()
