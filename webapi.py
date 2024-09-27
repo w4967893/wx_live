@@ -619,7 +619,7 @@ def a_online_member():
 
 
 
-def msg(live_id):
+def msg():
     global liveCookies
     url = "https://channels.weixin.qq.com/cgi-bin/mmfinderassistant-bin/live/msg"
 
@@ -666,7 +666,7 @@ def msg(live_id):
 
             liveCookies=rejson['data']['liveCookies']
             #print("liveCookies",liveCookies)
-            downmsg(rejson['data'], live_id)
+            downmsg(rejson['data'])
             return True
         else:
             return False
@@ -764,7 +764,7 @@ def gift_enum_list():
         return False
 
 
-def downmsg(rejson, live_id):
+def downmsg(rejson):
     #######解析数据########
     newmsg=[]
     insert_data = []
@@ -788,7 +788,7 @@ def downmsg(rejson, live_id):
             # badge_infos=member['finderLiveContact']['badgeInfos']
             # newmsg.append({'nickname': nickname, 'msgType': type, 'username': username, 'content': content,'signature':signature,'ext_info':ext_info,'badge_infos':badge_infos})
             print("昵称："+nickname+"  弹幕信息："+content)
-            insert_data.append((live_id, content, "", "[]"))
+            insert_data.append((9527, content, "", "[]"))
 
     # for member in rejson['appMsgList']:
     #     type=member['msgType']
@@ -831,14 +831,14 @@ def downmsg(rejson, live_id):
 
 
 
-def getmsg(live_id):
+def getmsg():
     count = 0
     global terminate_flag
     while not terminate_flag:
         count += 1
         #print("当前时间：", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
-        if get_live_info() and msg(live_id):
-                time.sleep(0.2)
+        if get_live_info() and msg():
+                time.sleep(0.1)
         else:
             break
 
@@ -931,8 +931,7 @@ def insert(data):
 
 if __name__ == '__main__':
     # breakpoint()
-    live_id = 9527
-    t1 = Thread(target=getmsg(live_id))
+    t1 = Thread(target=getmsg)
 
     # 调用函数获取数据
     #data = hepler_merlin_mmdata()
