@@ -36,25 +36,14 @@ authKey = {}
 session = {}
 stop_events = {}  # 用于存储每个 live_id 对应的停止事件
 
-def filtertime():
-    # 获取今天0点的时间戳
-    today = time.time()
-    filterEndTime = int(today) - (int(today) % 86400)
-
-    # 减去 8664 天
-    diff_days = 8664
-    filterStartTime = filterEndTime - (diff_days * 86400)
-
-    print("今天0点的时间戳：", filterEndTime)
-    print("相减后的时间戳：", filterStartTime)
-    return filterEndTime,filterStartTime
-
-def setcoockis(response):
-    # 获取返回的cookie值
-    cookies = response.cookies
-    # 打印cookie值
-    for cookie in cookies:
-        print(cookie.name, cookie.value)
+def stop_thread(live_id):
+    print(stop_events)
+    if live_id not in stop_events:
+        return False
+    # 设置 Event 对象，通知线程应该停止
+    stop_events[live_id].set()
+    del stop_events[live_id]
+    return True
 
 def generate_timestamp(length=10):
     current_time = time.time()
@@ -561,23 +550,23 @@ def handle_msg(rejson):
     insert(insert_data)
 
 def getmsg(stop_event, live_id):
+    count = 0
     while not stop_event.is_set():
-        count = 0
-        global terminate_flag
-        while not terminate_flag[live_id]:
-            print('get msg live id = '+str(live_id))
-            count += 1
-            #print("当前时间：", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
-            if get_live_info(live_id) and msg(live_id):
-                    time.sleep(0.1)
+        print('get msg live id = '+str(live_id))
+        print(stop_events)
+        count += 1
+        #print("当前时间：", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
+        if get_live_info(live_id) and msg(live_id):
+                time.sleep(0.1)
+        else:
+            break
+
+        if count % 3 == 0:
+            if check_live_status(live_id) and a_online_member(live_id) and reward_gains(live_id):
+                time.sleep(0.1)
             else:
                 break
-
-            if count % 3 == 0:
-                if check_live_status(live_id) and a_online_member(live_id) and reward_gains(live_id):
-                    time.sleep(0.1)
-                else:
-                    break
+    print(str(live_id)+"线程停止了")
 
 @staticmethod
 def create_connection():
@@ -607,10 +596,8 @@ def insert(data):
 def get_live_message(live_id):
     # 为这个 live_id 创建一个新的停止事件
     stop_event = threading.Event()
+    global stop_events
     stop_events[live_id] = stop_event
-
-    global terminate_flag
-    terminate_flag[live_id] = False
 
     global uid
     uid[live_id] = uuid.uuid4().hex
@@ -639,25 +626,35 @@ def get_live_message(live_id):
 
 async def ws_path(websocket, path):
     if path == "/start":
-        async for data_json in websocket:
-            data = json.loads(data_json)
-
+        # async for data_json in websocket:
+        while True:
             try:
+                data_json = await websocket.recv()
+                data = json.loads(data_json)
+
+                #如果live_id已存在
+                if data["live_id"] in stop_events:
+                    print("该live id已在获取弹幕信息")
+                    return
+
                 # threading.Thread(target=get_live_message, args=(data["live_id"],)).start()
                 get_live_message(data["live_id"])
-            except Exception as e:
-                print(f"Error in get_live_message_two: {e}")
 
-            print(f"Received message: {data["live_id"]}")
-            # 将接收到的消息发送回客户端
-            # await websocket.send(f"Server received: {data["live_id"]}")
-
-            if websocket.closed:
-                # 设置停止事件以停止线程
+                # 将接收到的消息发送回客户端
+                # await websocket.send(f"Server received: {data["live_id"]}")
+            except websockets.exceptions.ConnectionClosedOK:
+                print("关闭客户端连接")
                 stop_event = stop_events.get(data["live_id"])
                 if stop_event:
                     stop_event.set()
-                return
+                    del stop_events[data["live_id"]]
+                print("WebSocket connection closed normally.")
+                break
+            except websockets.exceptions.ConnectionClosedError:
+                print("WebSocket connection closed due to error.")
+                break
+            except Exception as e:
+                print(f"Error in get_live_message: {e}")
 
 async def ws_start():
     # 使用 websockets.serve 创建WebSocket服务，指定处理函数和监听地址、端口
@@ -665,16 +662,5 @@ async def ws_start():
         # 这会让服务器一直运行
         await asyncio.Future()
 
-@app.get("/close")
-async def close_live(live_id: int = Query(None)):
-    print(live_id)
-    global terminate_flag
-    terminate_flag = True
-    return
-
-async def http_start():
-    uvicorn.run("webapi:app", host="0.0.0.0", port=8766, reload=True)
-
 if __name__ == '__main__':
     asyncio.run(ws_start())
-    asyncio.run(http_start())
