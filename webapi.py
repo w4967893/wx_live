@@ -1,5 +1,4 @@
 from time import sleep
-
 import requests
 import time
 import qrcode
@@ -13,47 +12,28 @@ import base64
 import pymysql.cursors
 import websockets
 import asyncio
-
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
-
 from threading import Thread, Lock, enumerate
 import threading
 
 #线程锁
 app = FastAPI()
-msglist = queue.Queue()
-mutex = Lock()
-terminate_flag=False
-uid = uuid.uuid4().hex #生成唯一id
-uid22=str(uuid.uuid4())
-uid33=str(uuid.uuid4())
-session = requests.Session()
-finderUsername=''
-txvideo_nickname=''
-txvideo_headImgUrl=''
-wx_nickname=''
-wx_username=''
-wx_encryptedHeadImage=''
-adminNickname=''
-fansCount=0
-uniqId=''
-authKey=""
-X_Wechat_Uin=""
-liveObjectId=""
-liveId=""
-live_description=""
-liveCookies=""
-
-uid2 = {}
-finderUsername2 = {}
-X_Wechat_Uin2 = {}
-liveObjectId2 = {}
-liveId2 = {}
-live_description2 = {}
-liveCookies2 = {}
-authKey2 = {}
-session2 = {}
+terminate_flag = {}
+tx_video_nickname = {}
+tx_video_headImgUrl = {}
+wx_nickname = {}
+wx_username = {}
+wx_encryptedHeadImage = {}
+uid = {}
+finderUsername = {}
+X_Wechat_Uin = {}
+liveObjectId = {}
+liveId = {}
+live_description = {}
+liveCookies = {}
+authKey = {}
+session = {}
 stop_events = {}  # 用于存储每个 live_id 对应的停止事件
 
 def filtertime():
@@ -66,9 +46,8 @@ def filtertime():
     filterStartTime = filterEndTime - (diff_days * 86400)
 
     print("今天0点的时间戳：", filterEndTime)
-    print("相减后的时间戳：", filterStartTime)    
+    print("相减后的时间戳：", filterStartTime)
     return filterEndTime,filterStartTime
-
 
 def setcoockis(response):
     # 获取返回的cookie值
@@ -103,7 +82,7 @@ def getrcode(live_id):
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
         "X-WECHAT-UIN": "0000000000",
-        "finger-print-device-id": uid,
+        "finger-print-device-id": uid[live_id],
         "sec-ch-ua": '"Google Chrome";v="117", "Not;A=Brand";v="8", "Chromium";v="117"',
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"'
@@ -119,7 +98,7 @@ def getrcode(live_id):
         "reqScene": 7
     }
 
-    response = session2[live_id].post(url, headers=headers, json=data)
+    response = session[live_id].post(url, headers=headers, json=data)
     #setcoockis(response)
     redata=response.json()
 
@@ -144,7 +123,7 @@ def request_qrcode(retoken, live_id):
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
         "X-WECHAT-UIN": "0000000000",
-        "finger-print-device-id": uid2[live_id],
+        "finger-print-device-id": uid[live_id],
         "sec-ch-ua": '"Google Chrome";v="117", "Not;A=Brand";v="8", "Chromium";v="117"',
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"'
@@ -153,7 +132,7 @@ def request_qrcode(retoken, live_id):
     status= 0
     acctStatus = 0
     while count < 200:
-        response = session2[live_id].post(url, headers=headers)
+        response = session[live_id].post(url, headers=headers)
         #setcoockis(response)
         rejson=response.json()
         if rejson['errCode'] == 0:
@@ -204,7 +183,7 @@ def auth_data(live_id):
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
         "X-WECHAT-UIN": "0000000000",
-        "finger-print-device-id": uid2[live_id],
+        "finger-print-device-id": uid[live_id],
         "sec-ch-ua": "\"Google Chrome\";v=\"117\", \"Not;A=Brand\";v=\"8\", \"Chromium\";=\"117\"",
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": "\"Windows\""
@@ -219,24 +198,21 @@ def auth_data(live_id):
         "reqScene": 7
     }
 
-    response = session2[live_id].post(url, headers=headers, json=data)
-    #setcoockis(response)
+    response = session[live_id].post(url, headers=headers, json=data)
     rejson=response.json()
-    #print(response.json())
     if rejson['errCode'] == 0:
         global wx_encryptedHeadImage
-        wx_encryptedHeadImage=rejson['data']['userAttr']['encryptedHeadImage']
+        wx_encryptedHeadImage[live_id]=rejson['data']['userAttr']['encryptedHeadImage']
         global wx_nickname
-        wx_nickname=rejson['data']['userAttr']['nickname']
+        wx_nickname[live_id]=rejson['data']['userAttr']['nickname']
         global wx_username
-        wx_username=rejson['data']['userAttr']['username']
-        global txvideo_headImgUrl
-        txvideo_headImgUrl=rejson['data']['finderUser']['headImgUrl']
-        global txvideo_nickname
-        txvideo_nickname=rejson['data']['finderUser']['nickname']
-        global finderUsername2
-        # finderUsername=rejson['data']['finderUser']['finderUsername']
-        finderUsername2[live_id] = rejson['data']['finderUser']['finderUsername']
+        wx_username[live_id]=rejson['data']['userAttr']['username']
+        global tx_video_headImgUrl
+        tx_video_headImgUrl[live_id]=rejson['data']['finderUser']['headImgUrl']
+        global tx_video_nickname
+        tx_video_nickname[live_id]=rejson['data']['finderUser']['nickname']
+        global finderUsername
+        finderUsername[live_id] = rejson['data']['finderUser']['finderUsername']
         return True
     else:
         print("登录异常："+rejson['errMsg'])
@@ -257,7 +233,7 @@ def helper_upload_params(live_id):
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
         "X-WECHAT-UIN": "0000000000",
-        "finger-print-device-id": uid2[live_id],
+        "finger-print-device-id": uid[live_id],
         "sec-ch-ua": "\"Google Chrome\";v=\"117\", \"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"117\"",
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": "\"Windows\""
@@ -265,22 +241,20 @@ def helper_upload_params(live_id):
     data = {
         "timestamp": generate_timestamp(13),
         "_log_finder_uin": "",
-        "_log_finder_id": finderUsername2[live_id],
+        "_log_finder_id": finderUsername[live_id],
         "rawKeyBuff": None,
         "pluginSessionId": None,
         "scene": 7,
         "reqScene": 7
     }
 
-    response = session2[live_id].post(url, headers=headers, json=data)
+    response = session[live_id].post(url, headers=headers, json=data)
     rejson=response.json()
     if rejson['errCode'] == 0:
-        global authKey2
-        # authKey=rejson['data']['authKey']
-        authKey2[live_id] = rejson['data']['authKey']
-        global X_Wechat_Uin2
-        # X_Wechat_Uin=str(rejson['data']['uin'])
-        X_Wechat_Uin2[live_id] = str(rejson['data']['uin'])
+        global authKey
+        authKey[live_id] = rejson['data']['authKey']
+        global X_Wechat_Uin
+        X_Wechat_Uin[live_id] = str(rejson['data']['uin'])
         return True
     else:
         return False
@@ -300,8 +274,8 @@ def check_live_status(live_id):
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
-        "X-WECHAT-UIN": X_Wechat_Uin2[live_id],
-        "finger-print-device-id": uid2[live_id],
+        "X-WECHAT-UIN": X_Wechat_Uin[live_id],
+        "finger-print-device-id": uid[live_id],
         "sec-ch-ua": "\"Google Chrome\";v=\"117\", \"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"117\"",
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": "\"Windows\""
@@ -309,32 +283,29 @@ def check_live_status(live_id):
     data = {
         "timestamp": generate_timestamp(13),
         "_log_finder_uin": "",
-        "_log_finder_id": finderUsername2[live_id],
+        "_log_finder_id": finderUsername[live_id],
         "rawKeyBuff": None,
         "pluginSessionId": None,
         "scene": 7,
         "reqScene": 7
     }
-    #print("check_live_status")
+
     try:
-        response = session2[live_id].post(url, headers=headers, json=data,timeout=30)
+        response = session[live_id].post(url, headers=headers, json=data,timeout=30)
 
         rejson=response.json()
         if rejson['errCode'] == 0:
-            global liveId2
-            # liveId=rejson['data']['liveId']
-            liveId2[live_id] = rejson['data']['liveId']
-            global live_description2
-            # live_description=rejson['data']['description']
-            live_description2[live_id]=rejson['data']['description']
-            global liveObjectId2
-            # liveObjectId=rejson['data']['liveObjectId']
-            liveObjectId2[live_id] = rejson['data']['liveObjectId']
+            global liveId
+            liveId[live_id] = rejson['data']['liveId']
+            global live_description
+            live_description[live_id]=rejson['data']['description']
+            global liveObjectId
+            liveObjectId[live_id] = rejson['data']['liveObjectId']
             #print("check_live_status end")
             if rejson['data']['status']==1:
-                print(f'直播间【{live_description2[live_id]}】状态正常')
+                print(f'直播间【{live_description[live_id]}】状态正常')
             else:
-                print(f'直播间【{live_description2[live_id]}】状态={str(rejson["data"]["status"])}')
+                print(f'直播间【{live_description[live_id]}】状态={str(rejson["data"]["status"])}')
             return True
         else:
             return False
@@ -342,53 +313,6 @@ def check_live_status(live_id):
         print("check_live_status请求超时了")
         return True
 
-#获取历史直播场次的记录。这里可以不用调用
-def get_live_history():
-    url = "https://channels.weixin.qq.com/cgi-bin/mmfinderassistant-bin/live/get_live_history"
-    headers = {
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "zh-CN,zh;q=0.9",
-        "Connection": "keep-alive",
-        "Content-Type": "application/json",
-        "Origin": "https://channels.weixin.qq.com",
-        "Referer": "https://channels.weixin.qq.com/platform/live/home",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
-        "X-WECHAT-UIN": X_Wechat_Uin,
-        "finger-print-device-id": uid,
-        "sec-ch-ua": "\"Google Chrome\";v=\"117\", \"Not;A=Brand\";v=\"8\", \"Chromium\";=\"117\"",
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": "\"Windows\""
-    }
-    request=filtertime()
-    filterEndTime,filterStartTime=request
-    #查询的开始和结束时间
-    data = {
-        "pageSize": 1,
-        "currentPage": 1,
-        "reqType": 2,
-        "filterStartTime": filterStartTime,
-        "filterEndTime": filterEndTime,
-        "timestamp":generate_timestamp(13),
-        "_log_finder_uin": "",
-        "_log_finder_id": finderUsername,
-        "rawKeyBuff": None,
-        "pluginSessionId": None,
-        "scene": 7,
-        "reqScene": 7
-    }
-
-    response = session.post(url, headers=headers, json=data)
-
-    rejson=response.json()
-    if rejson['errCode'] == 0:
-        return True
-    else:
-        return False
-
-#
 def get_live_info(live_id):
     url = "https://channels.weixin.qq.com/cgi-bin/mmfinderassistant-bin/live/get_live_info"
     headers = {
@@ -402,25 +326,25 @@ def get_live_info(live_id):
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
-        "X-WECHAT-UIN": X_Wechat_Uin2[live_id],
-        "finger-print-device-id": uid2[live_id],
+        "X-WECHAT-UIN": X_Wechat_Uin[live_id],
+        "finger-print-device-id": uid[live_id],
         "sec-ch-ua": "\"Google Chrome\";v=\"117\", \"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"117\"",
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": "\"Windows\""
     }
     data = {
-        "liveObjectId": liveObjectId2[live_id],
+        "liveObjectId": liveObjectId[live_id],
         "timestamp": generate_timestamp(13),
         "_log_finder_uin": "",
-        "_log_finder_id": finderUsername2[live_id],
+        "_log_finder_id": finderUsername[live_id],
         "rawKeyBuff": None,
         "pluginSessionId": None,
         "scene": 7,
         "reqScene": 7
     }
-    print('get_live_info param :'+liveObjectId2[live_id]+'-------'+finderUsername2[live_id])
+    print('get_live_info param :'+liveObjectId[live_id]+'-------'+finderUsername[live_id])
     try:
-        response = session2[live_id].post(url, headers=headers, json=data,timeout=30)
+        response = session[live_id].post(url, headers=headers, json=data,timeout=30)
 
         rejson=response.json()
         if rejson['errCode'] == 0:
@@ -446,32 +370,31 @@ def join_live(live_id):
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
-        "X-WECHAT-UIN": X_Wechat_Uin2[live_id],
-        "finger-print-device-id": uid2[live_id],
+        "X-WECHAT-UIN": X_Wechat_Uin[live_id],
+        "finger-print-device-id": uid[live_id],
         "sec-ch-ua": "\"Google Chrome\";v=\"117\", \"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"117\"",
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": "\"Windows\""
     }
     data = {
-        "objectId": liveObjectId2[live_id],
-        "finderUsername": finderUsername2[live_id],
-        "liveId": liveId2[live_id],
+        "objectId": liveObjectId[live_id],
+        "finderUsername": finderUsername[live_id],
+        "liveId": liveId[live_id],
         "timestamp": str(int(time.time() * 1000)), # 使用当前的时间戳
         "_log_finder_uin": "",
-        "_log_finder_id": finderUsername2[live_id],
+        "_log_finder_id": finderUsername[live_id],
         "rawKeyBuff": None,
         "pluginSessionId": None,
         "scene": 7,
         "reqScene": 7
     }
 
-    response = session2[live_id].post(url, headers=headers, json=data)
+    response = session[live_id].post(url, headers=headers, json=data)
 
     rejson=response.json()
     if rejson['errCode'] == 0:
-        global liveCookies2
-        # liveCookies=rejson['data']['liveCookies']
-        liveCookies2[live_id] = rejson['data']['liveCookies']
+        global liveCookies
+        liveCookies[live_id] = rejson['data']['liveCookies']
         return True
     else:
         print(f"join_live异常：{rejson}")
@@ -491,20 +414,20 @@ def a_online_member(live_id):
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
-        "X-WECHAT-UIN": X_Wechat_Uin2[live_id],
-        "finger-print-device-id": uid2[live_id],
+        "X-WECHAT-UIN": X_Wechat_Uin[live_id],
+        "finger-print-device-id": uid[live_id],
         "sec-ch-ua": "\"Google Chrome\";v=\"117\", \"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"117\"",
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": "\"Windows\""
     }
     data = {
-        "objectId": liveObjectId2[live_id],
-        "finderUsername": finderUsername2[live_id],
+        "objectId": liveObjectId[live_id],
+        "finderUsername": finderUsername[live_id],
         "clearRecentRewardHistory": True,
-        "liveId": liveId2[live_id],
+        "liveId": liveId[live_id],
         "timestamp": generate_timestamp(13),
         "_log_finder_uin": "",
-        "_log_finder_id": finderUsername2[live_id],
+        "_log_finder_id": finderUsername[live_id],
         "rawKeyBuff": None,
         "pluginSessionId": None,
         "scene": 7,
@@ -512,7 +435,7 @@ def a_online_member(live_id):
     }
 
     try:
-        response = session2[live_id].post(url, headers=headers, json=data,timeout=30)
+        response = session[live_id].post(url, headers=headers, json=data,timeout=30)
         rejson=response.json()
         if rejson['errCode'] == 0:
             json_str = json.dumps(rejson)
@@ -528,7 +451,7 @@ def a_online_member(live_id):
         return True
 
 def msg(live_id):
-    global liveCookies2
+    global liveCookies
     url = "https://channels.weixin.qq.com/cgi-bin/mmfinderassistant-bin/live/msg"
 
     headers = {
@@ -542,22 +465,22 @@ def msg(live_id):
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
-        "X-WECHAT-UIN": X_Wechat_Uin2[live_id],
-        "finger-print-device-id": uid2[live_id],
+        "X-WECHAT-UIN": X_Wechat_Uin[live_id],
+        "finger-print-device-id": uid[live_id],
         "sec-ch-ua": "\"Google Chrome\";v=\"117\", \"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"117\"",
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": "\"Windows\""
     }
 
     data = {
-        "objectId": liveObjectId2[live_id],
-        "finderUsername": finderUsername2[live_id],
-        "liveCookies": liveCookies2[live_id],
-        "liveId": liveId2[live_id],
+        "objectId": liveObjectId[live_id],
+        "finderUsername": finderUsername[live_id],
+        "liveCookies": liveCookies[live_id],
+        "liveId": liveId[live_id],
         "longpollingScene": 0,
         "timestamp": generate_timestamp(13),
         "_log_finder_uin": "",
-        "_log_finder_id": finderUsername2[live_id],
+        "_log_finder_id": finderUsername[live_id],
         "rawKeyBuff": None,
         "pluginSessionId": None,
         "scene": 7,
@@ -565,11 +488,11 @@ def msg(live_id):
     }
 
     try:
-        response = session2[live_id].post(url, json=data, headers=headers,timeout=30)
+        response = session[live_id].post(url, json=data, headers=headers,timeout=30)
         rejson=response.json()
         if rejson['errCode'] == 0:
             #对本次的消息进行解析
-            liveCookies2[live_id]=rejson['data']['liveCookies']
+            liveCookies[live_id]=rejson['data']['liveCookies']
             handle_msg(rejson['data'])
             return True
         else:
@@ -591,20 +514,20 @@ def reward_gains(live_id):
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
-        "X-WECHAT-UIN": X_Wechat_Uin2[live_id],
-        "finger-print-device-id": uid2[live_id],
+        "X-WECHAT-UIN": X_Wechat_Uin[live_id],
+        "finger-print-device-id": uid[live_id],
         "sec-ch-ua": "\"Google Chrome\";v=\"117\", \"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"117\"",
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": "\"Windows\""
     }
     data = {
-        "objectId": liveObjectId2[live_id],
-        "finderUsername": finderUsername2[live_id],
+        "objectId": liveObjectId[live_id],
+        "finderUsername": finderUsername[live_id],
         "clearRecentRewardHistory": True,
-        "liveId": liveId2[live_id],
+        "liveId": liveId[live_id],
         "timestamp": generate_timestamp(13),
         "_log_finder_uin": "",
-        "_log_finder_id": finderUsername2[live_id],
+        "_log_finder_id": finderUsername[live_id],
         "rawKeyBuff": None,
         "pluginSessionId": None,
         "scene": 7,
@@ -612,7 +535,7 @@ def reward_gains(live_id):
     }
     #print("reward_gains")
     try:
-        response = session2[live_id].post(url, headers=headers, json=data,timeout=30)
+        response = session[live_id].post(url, headers=headers, json=data,timeout=30)
         rejson=response.json()
 
         if rejson['errCode'] == 0:
@@ -624,49 +547,6 @@ def reward_gains(live_id):
     except requests.exceptions.Timeout:
         print("reward_gains请求超时了")
         return True
-
-def gift_enum_list():
-    url = "https://channels.weixin.qq.com/cgi-bin/mmfinderassistant-bin/live/gift_enum_list"
-    headers = {
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "zh-CN,zh;q=0.9",
-        "Connection": "keep-alive",
-        "Content-Type": "application/json",
-        "Origin": "https://channels.weixin.qq.com",
-        "Referer": "https://channels.weixin.qq.com/platform/live/liveBuild",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
-        "X-WECHAT-UIN": X_Wechat_Uin,
-        "finger-print-device-id": uid,
-        "sec-ch-ua": "\"Google Chrome\";v=\"117\", \"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"117\"",
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": "\"Windows\""
-    }
-    data = {
-        "objectId": liveObjectId,
-        "username": finderUsername,
-        "liveId": liveId,
-        "timestamp": generate_timestamp(13),
-        "_log_finder_uin": "",
-        "_log_finder_id": finderUsername,
-        "rawKeyBuff": None,
-        "pluginSessionId": None,
-        "scene": 7,
-        "reqScene": 7
-    }
-    
-    response = session.post(url, headers=headers, json=data)
-    rejson=response.json()
-    print("gift_enum_list:")
-    print(data)
-    print(rejson)
-    if rejson['errCode'] == 0:
-        return True
-    else:
-        return False
-
 
 def handle_msg(rejson):
     #解析数据
@@ -684,7 +564,7 @@ def getmsg(stop_event, live_id):
     while not stop_event.is_set():
         count = 0
         global terminate_flag
-        while not terminate_flag:
+        while not terminate_flag[live_id]:
             print('get msg live id = '+str(live_id))
             count += 1
             #print("当前时间：", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
@@ -699,56 +579,6 @@ def getmsg(stop_event, live_id):
                 else:
                     break
 
-@app.get("/getmsg")
-def getmsgs():
-    msglist_dir = "msglist"  # 指定目录路径
-
-    # 检查目录是否存在
-    if not os.path.exists(msglist_dir):
-        return {"code": 0, "message": "目录不存在"}
-
-    # 获取目录下的所有文件
-    files = os.listdir(msglist_dir)
-
-    # 检查是否有文件
-    if len(files) == 0:
-        return {"code": 0, "message": "目前没有消息"}
-
-    # 取第一个文件
-    first_file = files[0]
-
-    # 构建文件路径
-    file_path = os.path.join(msglist_dir, first_file)
-
-    # 读取文件内容
-    with open(file_path, "r") as file:
-        file_content = file.read()
-
-    # 删除已读取的文件
-    os.remove(file_path)
-
-    # 返回文件内容
-    return {"code": 1, "message": "读取成功", "data": json.loads(file_content)}
-
-
-@app.get("/clsmsg")
-def clear_messages():
-    msglist_dir = "msglist"  # 指定目录路径
-
-    # 检查目录是否存在
-    if not os.path.exists(msglist_dir):
-        return {"code":0,"message": "目录不存在"}
-
-    # 获取目录下的所有文件
-    files = os.listdir(msglist_dir)
-
-    # 删除目录下的所有文件
-    for file in files:
-        file_path = os.path.join(msglist_dir, file)
-        os.remove(file_path)
-
-    return {"code":1,"message": "所有文件已删除"}
-
 @staticmethod
 def create_connection():
     return pymysql.connect(
@@ -760,10 +590,6 @@ def create_connection():
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=True  # 设置自动提交模式
     )
-
-@app.get("/get_online_member")
-async def get_online_members():
-    return FileResponse("online_member.json")
 
 def insert(data):
     db = create_connection()
@@ -783,11 +609,14 @@ def get_live_message(live_id):
     stop_event = threading.Event()
     stop_events[live_id] = stop_event
 
-    global uid2
-    uid2[live_id] = uuid.uuid4().hex
+    global terminate_flag
+    terminate_flag[live_id] = False
 
-    global session2
-    session2[live_id] = requests.Session()
+    global uid
+    uid[live_id] = uuid.uuid4().hex
+
+    global session
+    session[live_id] = requests.Session()
 
     retoken = getrcode(live_id)
     rehttp = f'https://channels.weixin.qq.com/mobile/confirm_login.html?token={retoken}'
@@ -836,5 +665,16 @@ async def ws_start():
         # 这会让服务器一直运行
         await asyncio.Future()
 
+@app.get("/close")
+async def close_live(live_id: int = Query(None)):
+    print(live_id)
+    global terminate_flag
+    terminate_flag = True
+    return
+
+async def http_start():
+    uvicorn.run("webapi:app", host="0.0.0.0", port=8766, reload=True)
+
 if __name__ == '__main__':
     asyncio.run(ws_start())
+    asyncio.run(http_start())
