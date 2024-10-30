@@ -12,7 +12,7 @@ import base64
 import pymysql.cursors
 import websockets
 import asyncio
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, WebSocket
 from fastapi.responses import FileResponse
 from threading import Thread, Lock, enumerate
 import threading
@@ -37,7 +37,6 @@ session = {}
 stop_events = {}  # 用于存储每个 live_id 对应的停止事件
 
 def stop_thread(live_id):
-    print(stop_events)
     if live_id not in stop_events:
         return False
     # 设置 Event 对象，通知线程应该停止
@@ -614,8 +613,6 @@ def get_live_message(live_id):
     qr.make()
     qr.print_ascii(out=None, tty=False, invert=False)
 
-    print('请使用<微信>扫码登录！')
-
     time.sleep(1)
 
     # 获取二维码以及前期一系列准备工作。
@@ -624,43 +621,47 @@ def get_live_message(live_id):
         print("加载成功，开启消息获取线程。获取实时弹幕消息。")
         threading.Thread(target=getmsg, args=(stop_event, live_id)).start()
 
-async def ws_path(websocket, path):
-    if path == "/start":
-        # async for data_json in websocket:
+@app.get("/api/stop")
+async def stop_live(live_id: int | None = None):
+    if stop_thread(live_id):
+        return {
+            "is_ok":True,
+            "message":"success"
+        }
+
+    return {
+        "is_ok": False,
+        "message": "Live id 不存在"
+    }
+
+@app.websocket("/ws/start")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    # async for data_json in websocket:
+    try:
         while True:
-            try:
-                data_json = await websocket.recv()
-                data = json.loads(data_json)
+            data_json = await websocket.receive_text()
+            print("获取到的参数"+str(data_json))
+            data = json.loads(data_json)
 
-                #如果live_id已存在
-                if data["live_id"] in stop_events:
-                    print("该live id已在获取弹幕信息")
-                    return
+            # 如果live_id已存在
+            if data["live_id"] in stop_events:
+                print("该live id已在获取弹幕信息")
+                return
 
-                # threading.Thread(target=get_live_message, args=(data["live_id"],)).start()
-                get_live_message(data["live_id"])
+            # threading.Thread(target=get_live_message, args=(data["live_id"],)).start()
+            get_live_message(data["live_id"])
 
-                # 将接收到的消息发送回客户端
-                # await websocket.send(f"Server received: {data["live_id"]}")
-            except websockets.exceptions.ConnectionClosedOK:
-                print("关闭客户端连接")
-                stop_event = stop_events.get(data["live_id"])
-                if stop_event:
-                    stop_event.set()
-                    del stop_events[data["live_id"]]
-                print("WebSocket connection closed normally.")
-                break
-            except websockets.exceptions.ConnectionClosedError:
-                print("WebSocket connection closed due to error.")
-                break
-            except Exception as e:
-                print(f"Error in get_live_message: {e}")
-
-async def ws_start():
-    # 使用 websockets.serve 创建WebSocket服务，指定处理函数和监听地址、端口
-    async with websockets.serve(ws_path, "localhost", 8765):
-        # 这会让服务器一直运行
-        await asyncio.Future()
+            # 将接收到的消息发送回客户端
+            # await websocket.send(f"Server received: {data["live_id"]}")
+    except Exception as e:
+        print("关闭客户端连接")
+        stop_event = stop_events.get(data["live_id"])
+        print(stop_event)
+        if stop_event:
+            stop_event.set()
+            del stop_events[data["live_id"]]
+        await websocket.close()
 
 if __name__ == '__main__':
-    asyncio.run(ws_start())
+    uvicorn.run(app="__main__:app", host="0.0.0.0", port=8000, log_level="info", reload=True)
