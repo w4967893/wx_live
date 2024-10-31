@@ -16,6 +16,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.responses import FileResponse
 from threading import Thread, Lock, enumerate
 import threading
+from io import BytesIO
 
 #线程锁
 app = FastAPI()
@@ -129,7 +130,6 @@ def request_qrcode(retoken, live_id):
             status=rejson['data']['status']
             acctStatus=rejson['data']['acctStatus']
             if status==0 and acctStatus==0:
-                print(live_id)
                 print('请使用<微信>扫码登录！')
             elif status==5 and acctStatus==1:
                 print('已扫码请在手机上点击确认登录！')
@@ -481,7 +481,7 @@ def msg(live_id):
         if rejson['errCode'] == 0:
             #对本次的消息进行解析
             liveCookies[live_id]=rejson['data']['liveCookies']
-            handle_msg(rejson['data'])
+            handle_msg(rejson['data'], live_id)
             return True
         else:
             return False
@@ -536,7 +536,7 @@ def reward_gains(live_id):
         print("reward_gains请求超时了")
         return True
 
-def handle_msg(rejson):
+def handle_msg(rejson, live_id):
     #解析数据
     insert_data = []
     for member in rejson['msgList']:
@@ -544,7 +544,7 @@ def handle_msg(rejson):
             nickname = member['nickname']
             content = member['content']
             print("昵称："+nickname+"  弹幕信息："+content)
-            insert_data.append((9527, content, "", "[]"))
+            insert_data.append((live_id, content, "", "[]"))
     # 入库
     insert(insert_data)
 
@@ -592,34 +592,19 @@ def insert(data):
     finally:
         db.close()
 
-def get_live_message(live_id):
+def get_live_message(live_id, retoken):
     # 为这个 live_id 创建一个新的停止事件
     stop_event = threading.Event()
     global stop_events
     stop_events[live_id] = stop_event
-
-    global uid
-    uid[live_id] = uuid.uuid4().hex
-
-    global session
-    session[live_id] = requests.Session()
-
-    retoken = getrcode(live_id)
-    rehttp = f'https://channels.weixin.qq.com/mobile/confirm_login.html?token={retoken}'
-
-    qr = qrcode.QRCode()
-    qr.border = 1
-    qr.add_data(rehttp)
-    qr.make()
-    qr.print_ascii(out=None, tty=False, invert=False)
-
-    time.sleep(1)
 
     # 获取二维码以及前期一系列准备工作。
     if request_qrcode(
             retoken, live_id) and auth_data(live_id) and helper_upload_params(live_id) and check_live_status(live_id) and get_live_info(live_id) and join_live(live_id) and a_online_member(live_id):
         print("加载成功，开启消息获取线程。获取实时弹幕消息。")
         threading.Thread(target=getmsg, args=(stop_event, live_id)).start()
+    else:
+        return False
 
 @app.get("/api/stop")
 async def stop_live(live_id: int | None = None):
@@ -649,19 +634,47 @@ async def websocket_endpoint(websocket: WebSocket):
                 print("该live id已在获取弹幕信息")
                 return
 
-            # threading.Thread(target=get_live_message, args=(data["live_id"],)).start()
-            get_live_message(data["live_id"])
+            global uid
+            uid[data["live_id"]] = uuid.uuid4().hex
 
-            # 将接收到的消息发送回客户端
-            # await websocket.send(f"Server received: {data["live_id"]}")
+            global session
+            session[data["live_id"]] = requests.Session()
+
+            retoken = getrcode(data["live_id"])
+            rehttp = f'https://channels.weixin.qq.com/mobile/confirm_login.html?token={retoken}'
+
+            qr = qrcode.QRCode()
+            qr.border = 1
+            qr.add_data(rehttp)
+            qr.make()
+
+            # 生成二维码图像
+            img = qr.make_image(fill_color="black", back_color="white")
+
+            # 将图像保存到字节流中
+            buffer = BytesIO()
+            img.save(buffer)
+            buffer.seek(0)
+
+            # 编码为Base64字符串
+            qr_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+
+            # 发送给客户端
+            await websocket.send_text(json.dumps({"is_ok":True, "qr_code": qr_base64}))
+
+            is_success = get_live_message(data["live_id"], retoken)
+            if is_success is not None:
+                stop_thread(data["live_id"])
+                await websocket.send_text(json.dumps({"is_ok": False, "message": "加载失败"}))
+
     except Exception as e:
         print("关闭客户端连接")
         stop_event = stop_events.get(data["live_id"])
-        print(stop_event)
+        print(f"Error in : {e}")
         if stop_event:
             stop_event.set()
             del stop_events[data["live_id"]]
         await websocket.close()
 
 if __name__ == '__main__':
-    uvicorn.run(app="__main__:app", host="0.0.0.0", port=8000, log_level="info", reload=True)
+    uvicorn.run(app="__main__:app", host="0.0.0.0", port=18081, log_level="info", reload=True)
