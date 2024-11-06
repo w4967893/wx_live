@@ -12,7 +12,7 @@ import base64
 import pymysql.cursors
 import websockets
 import asyncio
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from threading import Thread, Lock, enumerate
 import threading
@@ -36,6 +36,7 @@ liveCookies = {}
 authKey = {}
 session = {}
 stop_events = {}  # 用于存储每个 live_id 对应的停止事件
+live_websockets = {}
 
 def stop_thread(live_id):
     if live_id not in stop_events:
@@ -609,6 +610,14 @@ def get_live_message(live_id, retoken):
 @app.get("/api/stop")
 async def stop_live(live_id: int | None = None):
     if stop_thread(live_id):
+        # 通知所有与该 live_id 关联的 WebSocket 连接
+        if live_id in live_websockets:
+            for ws in live_websockets[live_id]:
+                try:
+                    await ws.send_text(json.dumps({"is_ok": True, "message": "closed"}))
+                except WebSocketDisconnect:
+                    pass
+            del live_websockets[live_id]
         return {
             "is_ok":True,
             "message":"success"
@@ -667,6 +676,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 stop_thread(data["live_id"])
                 await websocket.send_text(json.dumps({"is_ok": False, "message": "加载失败"}))
 
+            # 添加 WebSocket 到 live_id 的列表中
+            if data["live_id"] not in live_websockets:
+                live_websockets[data["live_id"]] = []
+            live_websockets[data["live_id"]].append(websocket)
+
     except Exception as e:
         print("关闭客户端连接")
         stop_event = stop_events.get(data["live_id"])
@@ -674,6 +688,12 @@ async def websocket_endpoint(websocket: WebSocket):
         if stop_event:
             stop_event.set()
             del stop_events[data["live_id"]]
+
+        # 移除 WebSocket 连接
+        if data["live_id"] in live_websockets:
+            live_websockets[data["live_id"]].remove(websocket)
+            if not live_websockets[data["live_id"]]:
+                del live_websockets[data["live_id"]]
         await websocket.close()
 
 if __name__ == '__main__':
