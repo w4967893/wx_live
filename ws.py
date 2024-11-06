@@ -614,7 +614,7 @@ async def stop_live(live_id: int | None = None):
         if live_id in live_websockets:
             for ws in live_websockets[live_id]:
                 try:
-                    await ws.send_text(json.dumps({"is_ok": True, "message": "closed"}))
+                    await ws.send_text(json.dumps({"is_ok": True, "status": 1, "message": "closed"}))
                 except WebSocketDisconnect:
                     pass
             del live_websockets[live_id]
@@ -669,12 +669,12 @@ async def websocket_endpoint(websocket: WebSocket):
             qr_base64 = base64.b64encode(buffer.read()).decode('utf-8')
 
             # 发送给客户端
-            await websocket.send_text(json.dumps({"is_ok":True, "qr_code": qr_base64}))
+            await websocket.send_text(json.dumps({"is_ok":True, "status": 2, "message": qr_base64}))
 
             is_success = get_live_message(data["live_id"], retoken)
             if is_success is not None:
                 stop_thread(data["live_id"])
-                await websocket.send_text(json.dumps({"is_ok": False, "message": "加载失败"}))
+                await websocket.send_text(json.dumps({"is_ok": False, "status": 1, "message": "链接失败"}))
 
             # 添加 WebSocket 到 live_id 的列表中
             if data["live_id"] not in live_websockets:
