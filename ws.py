@@ -612,17 +612,12 @@ async def stop_live(live_id: int | None = None):
     if stop_thread(live_id):
         # 通知所有与该 live_id 关联的 WebSocket 连接
         if live_id in live_websockets:
-            for ws in live_websockets[live_id]:
-                try:
-                    await ws.send_text(json.dumps({"is_ok": True, "status": 1, "message": "closed"}))
-                except WebSocketDisconnect:
-                    pass
+            await live_websockets[live_id].send_text(json.dumps({"is_ok": True, "status": 1, "message": live_id}))
             del live_websockets[live_id]
-        return {
-            "is_ok":True,
-            "message":"success"
-        }
-
+            return {
+                "is_ok": True,
+                "message": "success"
+            }
     return {
         "is_ok": False,
         "message": "Live id 不存在"
@@ -631,7 +626,6 @@ async def stop_live(live_id: int | None = None):
 @app.websocket("/ws/start")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    # async for data_json in websocket:
     try:
         while True:
             data_json = await websocket.receive_text()
@@ -640,61 +634,64 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # 如果live_id已存在
             if data["live_id"] in stop_events:
+                # 因为每次连接websocket都会更改，对本次websocket进行更改
+                live_websockets[data["live_id"]]=websocket
                 print("该live id已在获取弹幕信息")
-                return
+                await websocket.send_text(json.dumps({"is_ok": True, "status": 3, "message": "该live id已在获取弹幕信息"}))
+                # return
+            else:
+                global uid
+                uid[data["live_id"]] = uuid.uuid4().hex
 
-            global uid
-            uid[data["live_id"]] = uuid.uuid4().hex
+                global sessions
+                session[data["live_id"]] = requests.Session()
 
-            global session
-            session[data["live_id"]] = requests.Session()
+                retoken = getrcode(data["live_id"])
+                rehttp = f'https://channels.weixin.qq.com/mobile/confirm_login.html?token={retoken}'
 
-            retoken = getrcode(data["live_id"])
-            rehttp = f'https://channels.weixin.qq.com/mobile/confirm_login.html?token={retoken}'
+                qr = qrcode.QRCode()
+                qr.border = 1
+                qr.add_data(rehttp)
+                qr.make()
 
-            qr = qrcode.QRCode()
-            qr.border = 1
-            qr.add_data(rehttp)
-            qr.make()
+                # 生成二维码图像
+                img = qr.make_image(fill_color="black", back_color="white")
 
-            # 生成二维码图像
-            img = qr.make_image(fill_color="black", back_color="white")
+                # 将图像保存到字节流中
+                buffer = BytesIO()
+                img.save(buffer)
+                buffer.seek(0)
 
-            # 将图像保存到字节流中
-            buffer = BytesIO()
-            img.save(buffer)
-            buffer.seek(0)
+                # 编码为Base64字符串
+                qr_base64 = base64.b64encode(buffer.read()).decode('utf-8')
 
-            # 编码为Base64字符串
-            qr_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+                # 发送给客户端
+                await websocket.send_text(json.dumps({"is_ok":True, "status": 2, "message": qr_base64}))
 
-            # 发送给客户端
-            await websocket.send_text(json.dumps({"is_ok":True, "status": 2, "message": qr_base64}))
+                is_success = get_live_message(data["live_id"], retoken)
+                if is_success is not None:
+                    stop_thread(data["live_id"])
+                    await websocket.send_text(json.dumps({"is_ok": False, "status": 1, "message": "链接失败"}))
 
-            is_success = get_live_message(data["live_id"], retoken)
-            if is_success is not None:
-                stop_thread(data["live_id"])
-                await websocket.send_text(json.dumps({"is_ok": False, "status": 1, "message": "链接失败"}))
-
-            # 添加 WebSocket 到 live_id 的列表中
-            if data["live_id"] not in live_websockets:
-                live_websockets[data["live_id"]] = []
-            live_websockets[data["live_id"]].append(websocket)
+                # 添加 WebSocket 到 live_id 的列表中
+                if data["live_id"] not in live_websockets:
+                    live_websockets[data["live_id"]]=websocket
 
     except Exception as e:
         print("关闭客户端连接")
-        stop_event = stop_events.get(data["live_id"])
-        print(f"Error in : {e}")
-        if stop_event:
-            stop_event.set()
-            del stop_events[data["live_id"]]
-
-        # 移除 WebSocket 连接
-        if data["live_id"] in live_websockets:
-            live_websockets[data["live_id"]].remove(websocket)
-            if not live_websockets[data["live_id"]]:
-                del live_websockets[data["live_id"]]
-        await websocket.close()
+        # stop_event = stop_events.get(data["live_id"])
+        # print(f"Error in : {e}")
+        # if stop_event:
+        #     stop_event.set()
+        #     del stop_events[data["live_id"]]
+        #
+        # # 移除 WebSocket 连接
+        # if data["live_id"] in live_websockets:
+        #     live_websockets[data["live_id"]].remove(websocket)
+        #     if not live_websockets[data["live_id"]]:
+        #         del live_websockets[data["live_id"]]
+        # await websocket.close()
+        pass
 
 if __name__ == '__main__':
     uvicorn.run(app="__main__:app", host="0.0.0.0", port=18081, log_level="info", reload=True)
