@@ -612,7 +612,7 @@ async def stop_live(live_id: int | None = None):
     if stop_thread(live_id):
         # 通知所有与该 live_id 关联的 WebSocket 连接
         if live_id in live_websockets:
-            await live_websockets[live_id].send_text(json.dumps({"is_ok": True, "status": 1, "message": live_id}))
+            await live_websockets[live_id].send_text(json.dumps({"is_ok": True, "data": {"status": 1, "live_id": live_id}}))
             del live_websockets[live_id]
             return {
                 "is_ok": True,
@@ -637,7 +637,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 # 因为每次连接websocket都会更改，对本次websocket进行更改
                 live_websockets[data["live_id"]]=websocket
                 print("该live id已在获取弹幕信息")
-                await websocket.send_text(json.dumps({"is_ok": True, "status": 3, "message": "该live id已在获取弹幕信息"}))
+                await websocket.send_text(json.dumps({"is_ok": True, "data": {"status": 3, "live_id": data["live_id"]}}))
                 # return
             else:
                 global uid
@@ -666,12 +666,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 qr_base64 = base64.b64encode(buffer.read()).decode('utf-8')
 
                 # 发送给客户端
-                await websocket.send_text(json.dumps({"is_ok":True, "status": 2, "message": qr_base64}))
+                await websocket.send_text(json.dumps({"is_ok":True, "data": {"status": 2, "live_id": data["live_id"], "qr_base64":qr_base64}}))
 
                 is_success = get_live_message(data["live_id"], retoken)
                 if is_success is not None:
                     stop_thread(data["live_id"])
-                    await websocket.send_text(json.dumps({"is_ok": False, "status": 1, "message": "链接失败"}))
+                    # 认证二维码超时，获取视频号信息失败等
+                    await websocket.send_text(json.dumps({"is_ok": False, "data": {"status": 1, "live_id": data["live_id"]}}))
 
                 # 添加 WebSocket 到 live_id 的列表中
                 if data["live_id"] not in live_websockets:
