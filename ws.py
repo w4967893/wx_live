@@ -599,9 +599,8 @@ def get_live_message(live_id, retoken):
     global stop_events
     stop_events[live_id] = stop_event
 
-    # 获取二维码以及前期一系列准备工作。
-    if request_qrcode(
-            retoken, live_id) and auth_data(live_id) and helper_upload_params(live_id) and check_live_status(live_id) and get_live_info(live_id) and join_live(live_id) and a_online_member(live_id):
+    # 前期一系列准备工作。
+    if auth_data(live_id) and helper_upload_params(live_id) and check_live_status(live_id) and get_live_info(live_id) and join_live(live_id) and a_online_member(live_id):
         print("加载成功，开启消息获取线程。获取实时弹幕消息。")
         threading.Thread(target=getmsg, args=(stop_event, live_id)).start()
     else:
@@ -665,13 +664,21 @@ async def websocket_endpoint(websocket: WebSocket):
                 # 编码为Base64字符串
                 qr_base64 = base64.b64encode(buffer.read()).decode('utf-8')
 
-                # 发送给客户端
+                # 发送二维码
                 await websocket.send_text(json.dumps({"is_ok":True, "data": {"status": 2, "live_id": data["live_id"], "qr_base64":qr_base64}}))
+
+                request_qrcode_success = request_qrcode(retoken, data["live_id"])
+                if request_qrcode_success:
+                    # 二维码已登录成功
+                    await websocket.send_text(json.dumps({"is_ok": True, "data": {"status": 4, "live_id": data["live_id"]}}))
+                else:
+                    # 二维码超时
+                    await websocket.send_text(json.dumps({"is_ok": False, "data": {"status": 2, "live_id": data["live_id"]}}))
 
                 is_success = get_live_message(data["live_id"], retoken)
                 if is_success is not None:
                     stop_thread(data["live_id"])
-                    # 认证二维码超时，获取视频号信息失败等
+                    # 认证失败，获取视频号信息失败等
                     await websocket.send_text(json.dumps({"is_ok": False, "data": {"status": 1, "live_id": data["live_id"]}}))
 
                 # 添加 WebSocket 到 live_id 的列表中
