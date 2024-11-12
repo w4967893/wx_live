@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 from threading import Thread, Lock, enumerate
 import threading
 from io import BytesIO
+from pydantic import BaseModel
 
 #线程锁
 app = FastAPI()
@@ -628,6 +629,11 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data_json = await websocket.receive_text()
+
+            if data_json == "ping":
+                await websocket.send_text(json.dumps("pong"))
+                continue
+
             print("获取到的参数"+str(data_json))
             data = json.loads(data_json)
 
