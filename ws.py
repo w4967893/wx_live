@@ -594,7 +594,7 @@ def insert(data):
     finally:
         db.close()
 
-def get_live_message(live_id, retoken):
+def get_live_message(live_id):
     # 为这个 live_id 创建一个新的停止事件
     stop_event = threading.Event()
     global stop_events
@@ -604,6 +604,7 @@ def get_live_message(live_id, retoken):
     if auth_data(live_id) and helper_upload_params(live_id) and check_live_status(live_id) and get_live_info(live_id) and join_live(live_id) and a_online_member(live_id):
         print("加载成功，开启消息获取线程。获取实时弹幕消息。")
         threading.Thread(target=getmsg, args=(stop_event, live_id)).start()
+        return True
     else:
         return False
 
@@ -681,11 +682,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     # 二维码超时
                     await websocket.send_text(json.dumps({"is_ok": False, "data": {"status": 2, "live_id": data["live_id"]}}))
 
-                is_success = get_live_message(data["live_id"], retoken)
-                if is_success is not None:
+                is_success = get_live_message(data["live_id"])
+                if is_success is False:
                     stop_thread(data["live_id"])
                     # 认证失败，获取视频号信息失败等
                     await websocket.send_text(json.dumps({"is_ok": False, "data": {"status": 1, "live_id": data["live_id"]}}))
+                else:
+                    # 认证成功
+                    await websocket.send_text(json.dumps({"is_ok": True, "data": {"status": 0, "live_id": data["live_id"]}}))
 
                 # 添加 WebSocket 到 live_id 的列表中
                 if data["live_id"] not in live_websockets:
