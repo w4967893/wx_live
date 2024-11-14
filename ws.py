@@ -13,6 +13,7 @@ import pymysql.cursors
 import websockets
 import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from threading import Thread, Lock, enumerate
 import threading
@@ -21,6 +22,11 @@ from pydantic import BaseModel
 
 #线程锁
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 允许所有来源，也可以指定特定的来源，如 ["http://xxxxx.com"]
+)
+
 terminate_flag = {}
 tx_video_nickname = {}
 tx_video_headImgUrl = {}
